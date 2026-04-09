@@ -1,0 +1,12 @@
+world:
+  name: pasture
+
+bounds: [0, 0, 20, 20]
+
+obstacles:
+  - type: fence
+    points: [[5,5], [15,5]]
+
+goal:
+  type: corral
+  position: [18, 18]

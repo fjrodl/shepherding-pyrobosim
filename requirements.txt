@@ -1,0 +1,10 @@
+pyrobosim
+numpy
+matplotlib
+pandas
+pyyaml
+tqdm
+jinja2 
+typeguard
+imageio
+imageio[ffmpeg]
