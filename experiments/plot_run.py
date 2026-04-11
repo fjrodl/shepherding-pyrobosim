@@ -31,9 +31,25 @@ def compute_clusters(positions, radius):
 with open("data/logs/run.json") as f:
     data = json.load(f)
 
+fig = plt.figure()
+stop_requested = False
+
+
+def _on_key_press(event):
+    global stop_requested
+    if event.key and event.key.lower() == "q":
+        stop_requested = True
+        plt.close(fig)
+
+
+fig.canvas.mpl_connect("key_press_event", _on_key_press)
+
 plt.ion()
 
 for step in data[::10]:  # cada 10 pasos
+    if stop_requested or not plt.fignum_exists(fig.number):
+        break
+
     plt.clf()
     
     sheep = np.array(step["sheep"])
@@ -78,4 +94,5 @@ for step in data[::10]:  # cada 10 pasos
     plt.pause(0.05)
 
 plt.ioff()
-plt.show()
+if not stop_requested and plt.fignum_exists(fig.number):
+    plt.show()
