@@ -1,7 +1,7 @@
 simulation:
-  seed: 42                       # unitless RNG seed
-  num_robots: 1                  # count
-  robot_start_mode: random       # options: origin, random, fixed
+  seed: 2                      # unitless RNG seed, use null for random seed //1 requires 83k, 42 requires 230k
+  num_robots: 3                  # count
+  robot_start_mode: fixed       # options: origin, random, fixed
   # Used when robot_start_mode=fixed. One [x, y] per robot.
   # If fewer positions than num_robots are provided, the first position is reused.
   # simulation:
@@ -12,13 +12,22 @@ simulation:
   #   - [2.0, 1.0]
   #   - [5.0, 5.0]
   robot_start_positions: [[0.0, 0.0]]  # world units
+  sheep_start_mode: random       # options: random, fixed
+  # Used when sheep_start_mode=fixed. One [x, y] per sheep.
+  # Must provide at least num_sheep positions.
+  sheep_start_positions: []      # world units
+  # Used when sheep_start_mode=random: [xmin, ymin, xmax, ymax]
+  sheep_spawn_bounds: [0.0, 0.0, 10.0, 10.0]  # world units
   num_sheep: 15                  # count
   # Use null to run until the goal is reached.
   # Use an integer to enforce a hard step cap.
-  steps: null                    # simulation steps
+  steps: null                    # simulation steps (null for no cap)
   bounds: [0, 0, 20, 20]         # world units: [xmin, ymin, xmax, ymax]
   goal_pos: [18.0, 18.0]         # world units: [x, y]
-  goal_radius: 2.0               # world units
+  goal_radius: 1.0               # world units
+  # Fence obstacle: list of [start, end] points, or null to disable
+  # Format: [[x1, y1], [x2, y2]]
+  fence: null # [[5.0, 5.0], [15.0, 5.0]]  # world units, null to disable fence
 
 planner:
   backend: pyperplan   # options: pyperplan, popf
@@ -30,9 +39,11 @@ planner:
 
 logging:
   # When true, suppress detailed planner action dumps.
-  planner_quiet: true
+  planner_quiet: false
   # Print "Iteration N" every N steps (0 disables this periodic print).
   iteration_log_interval: 100    # simulation steps
+  # When true, spawn live visualization during simulation
+  enable_visualization: true    # boolean (true/false)
 
 metrics:
   enabled: true
@@ -55,6 +66,7 @@ flocking:
   max_speed: 0.15                # world units / step
   dt: 0.05                       # simulation time units per step
   neighbor_radius: 2.5           # world units
+  noise_std: 0.01                # world units / step (stochastic sheep motion)
 
 robot:
   collect_threshold: 3.0         # world units
@@ -65,4 +77,4 @@ robot:
   # Minimum distance the robot tries to keep from any sheep.
   robot_sheep_min_distance: 1.0  # world units
   # Clearance from the fence segment to avoid crossing or hugging it.
-  robot_fence_clearance: 0.35    # world units
+  robot_fence_clearance: 0.2     # world units (reduced from 0.35)

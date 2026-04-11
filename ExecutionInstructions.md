@@ -22,6 +22,8 @@ Continuous state  →  WorldAbstraction  →  problem.pddl  →  pyperplan  → 
 shepherding-pyrobosim/
 ├── config/
 │   └── world.yaml               # World bounds, obstacles, goal
+│   └── pddl_experiment.yaml     # Main experiment configuration
+│   └── fixed_experiment.yaml    # Reproducible fixed-start example profile
 ├── data/logs/
 │   ├── run.json                 # Log from original reactive experiment
 │   └── run_pddl.json            # Log from PDDL-guided experiment
@@ -124,11 +126,28 @@ python3 experiments/run_experiment.py
 
 Log saved to `data/logs/run.json`.
 
+### 2.3 Run with an alternative config file
+
+Both experiment scripts accept an optional config path via the
+`EXPERIMENT_CONFIG` environment variable.
+
+Use the reproducible example profile:
+
+```bash
+EXPERIMENT_CONFIG=config/fixed_experiment.yaml \
+python3 experiments/run_experiment.py
+
+EXPERIMENT_CONFIG=config/fixed_experiment.yaml \
+python3 experiments/run_pddl_experiment.py
+```
+
 ---
 
 ## 3. Key Configuration Parameters
 
 All parameters are loaded from `config/pddl_experiment.yaml`.
+Both `experiments/run_experiment.py` and `experiments/run_pddl_experiment.py`
+read from this same YAML file.
 
 ### Simulation
 
@@ -136,6 +155,12 @@ All parameters are loaded from `config/pddl_experiment.yaml`.
 |---|---|---|
 | `NUM_SHEEP` | `15` | Number of sheep in the flock |
 | `STEPS` | `null` | Maximum simulation steps (`null` means run until goal is reached) |
+| `seed` | `null` or integer | Random seed (`null` = non-deterministic runs, integer = reproducible runs) |
+| `robot_start_mode` | `origin` | Robot spawn strategy: `origin`, `random`, or `fixed` |
+| `robot_start_positions` | `[[0.0, 0.0]]` | Per-robot start coordinates used when `robot_start_mode: fixed` |
+| `sheep_start_mode` | `random` | Sheep spawn strategy: `random` or `fixed` |
+| `sheep_start_positions` | `[]` | Per-sheep start coordinates used when `sheep_start_mode: fixed` |
+| `sheep_spawn_bounds` | `[0.0,0.0,10.0,10.0]` | Sheep random spawn area `[xmin,ymin,xmax,ymax]` |
 | `BOUNDS` | `[0,0,20,20]` | World boundaries (xmin, ymin, xmax, ymax) |
 | `GOAL_POS` | `[18.0, 18.0]` | Target corral position |
 | `GOAL_RADIUS` | `2.0` | Distance threshold to consider goal reached |
@@ -158,6 +183,7 @@ All parameters are loaded from `config/pddl_experiment.yaml`.
 | `w_fence` | `1.5` | Fence repulsion weight |
 | `max_speed` | `0.15` | Maximum sheep speed (units/step) |
 | `neighbor_radius` | `2.5` | Radius for local flock perception |
+| `noise_std` | `0.01` | Random motion noise standard deviation for sheep |
 
 ### Robot behaviour
 
@@ -168,6 +194,18 @@ All parameters are loaded from `config/pddl_experiment.yaml`.
 | `drive_distance` | `2.0` | How far behind the flock the robot positions |
 | `robot_max_speed` | `0.3` | Maximum robot speed (units/step) |
 | `robot_influence` | `3.0` | Radius within which the robot repels sheep |
+| `robot_sheep_min_distance` | `1.0` | Minimum distance robot tries to keep from sheep |
+| `robot_fence_clearance` | `0.35` | Minimum robot distance to the fence segment |
+
+### Logging and metrics
+
+| Parameter | Default | Description |
+|---|---|---|
+| `planner_quiet` | `true` | If `true`, suppresses detailed planner action dumps |
+| `iteration_log_interval` | `100` | Prints iteration progress every N steps (`0` disables periodic print) |
+| `metrics.enabled` | `true` | Enables run summary metrics JSON output |
+| `metrics.reactive_output_path` | `data/logs/run_metrics.json` | Metrics output path for reactive-only run |
+| `metrics.pddl_output_path` | `data/logs/run_pddl_metrics.json` | Metrics output path for PDDL run |
 
 ---
 
@@ -242,6 +280,71 @@ Then visualise both:
 ```bash
 python3 experiments/plot_run.py                # edit the script to point at each log
 ```
+
+### Example E — Always run the same experiment (reproducible)
+
+Use a fixed seed and fixed start positions.
+
+```yaml
+simulation:
+  seed: 42
+  robot_start_mode: fixed
+  robot_start_positions: [[0.0, 0.0]]
+  sheep_start_mode: fixed
+  sheep_start_positions:
+    - [1.0, 1.0]
+    - [2.0, 1.0]
+    - [3.0, 1.0]
+    - [4.0, 1.0]
+    - [5.0, 1.0]
+    - [1.0, 2.0]
+    - [2.0, 2.0]
+    - [3.0, 2.0]
+    - [4.0, 2.0]
+    - [5.0, 2.0]
+    - [1.0, 3.0]
+    - [2.0, 3.0]
+    - [3.0, 3.0]
+    - [4.0, 3.0]
+    - [5.0, 3.0]
+
+flocking:
+  noise_std: 0.01  # stochastic but reproducible with fixed seed
+```
+
+Or use the provided ready-to-run file:
+
+```bash
+EXPERIMENT_CONFIG=config/fixed_experiment.yaml \
+python3 experiments/run_pddl_experiment.py
+```
+
+### Example F — Different run every execution
+
+Use `seed: null` and random robot start.
+
+```yaml
+simulation:
+  seed: null
+  robot_start_mode: random
+
+flocking:
+  noise_std: 0.01
+```
+
+### Example G — Multi-robot fixed starts
+
+```yaml
+simulation:
+  num_robots: 3
+  robot_start_mode: fixed
+  robot_start_positions:
+    - [0.0, 0.0]
+    - [2.0, 1.0]
+    - [5.0, 5.0]
+```
+
+If you provide fewer positions than `num_robots`, the first position is reused.
 
 ---
 

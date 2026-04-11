@@ -3,6 +3,8 @@ import os
 import sys
 import yaml
 import json
+import subprocess
+import time
 
 # Make sure the project root is on the path when running from experiments/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -12,7 +14,10 @@ from shepherding.robot import ShepherdRobot
 from sim_logging.logger import Logger
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "pddl_experiment.yaml")
+CONFIG_PATH = os.environ.get(
+    "EXPERIMENT_CONFIG",
+    os.path.join(PROJECT_ROOT, "config", "pddl_experiment.yaml"),
+)
 
 
 def _load_baseline_config(config_path):
@@ -22,22 +27,31 @@ def _load_baseline_config(config_path):
 
     sim_cfg = raw.get("simulation", {})
     metrics_cfg = raw.get("metrics", {})
+    logging_cfg = raw.get("logging", {})
     flocking_cfg = raw.get("flocking", {})
     robot_cfg = raw.get("robot", {})
 
+    seed_raw = sim_cfg.get("seed", 42)
+    seed = None if seed_raw is None else int(seed_raw)
+
     cfg = {
-        "seed": int(sim_cfg.get("seed", 42)),
+        "seed": seed,
         "num_robots": int(sim_cfg.get("num_robots", 1)),
         "robot_start_mode": str(sim_cfg.get("robot_start_mode", "origin")).lower(),
         "robot_start_positions": sim_cfg.get("robot_start_positions", [[0.0, 0.0]]),
+        "sheep_start_mode": str(sim_cfg.get("sheep_start_mode", "random")).lower(),
+        "sheep_start_positions": sim_cfg.get("sheep_start_positions", []),
+        "sheep_spawn_bounds": sim_cfg.get("sheep_spawn_bounds", [0.0, 0.0, 10.0, 10.0]),
         "num_sheep": int(sim_cfg.get("num_sheep", 15)),
         # null in YAML means run until goal reached
         "steps": sim_cfg.get("steps", None),
         "bounds": sim_cfg.get("bounds", [0, 0, 20, 20]),
         "goal_pos": np.array(sim_cfg.get("goal_pos", [18.0, 18.0]), dtype=float),
         "goal_radius": float(sim_cfg.get("goal_radius", 2.0)),
+        "fence": sim_cfg.get("fence", None),  # null disables fence, or [[x1,y1], [x2,y2]]
         "metrics_enabled": bool(metrics_cfg.get("enabled", True)),
         "metrics_output_path": metrics_cfg.get("reactive_output_path", "data/logs/run_metrics.json"),
+        "visualization_enabled": bool(logging_cfg.get("enable_visualization", False)),
         "params": {
             "w_coh": float(flocking_cfg.get("w_coh", 0.05)),
             "w_sep": float(flocking_cfg.get("w_sep", 0.4)),
@@ -48,6 +62,7 @@ def _load_baseline_config(config_path):
             "max_speed": float(flocking_cfg.get("max_speed", 0.15)),
             "dt": float(flocking_cfg.get("dt", 0.05)),
             "neighbor_radius": float(flocking_cfg.get("neighbor_radius", 2.5)),
+            "noise_std": float(flocking_cfg.get("noise_std", 0.01)),
             "robot_influence": float(robot_cfg.get("robot_influence", 3.0)),
             "collect_threshold": float(robot_cfg.get("collect_threshold", 3.0)),
             "collect_distance": float(robot_cfg.get("collect_distance", 1.5)),
@@ -67,12 +82,17 @@ SEED = CFG["seed"]
 NUM_ROBOTS = CFG["num_robots"]
 ROBOT_START_MODE = CFG["robot_start_mode"]
 ROBOT_START_POSITIONS = CFG["robot_start_positions"]
+SHEEP_START_MODE = CFG["sheep_start_mode"]
+SHEEP_START_POSITIONS = CFG["sheep_start_positions"]
+SHEEP_SPAWN_BOUNDS = CFG["sheep_spawn_bounds"]
 NUM_SHEEP = CFG["num_sheep"]
 STEPS = CFG["steps"]
 GOAL_POS = CFG["goal_pos"]
 GOAL_RADIUS = CFG["goal_radius"]
+FENCE = CFG["fence"]  # None if disabled, else [[x1, y1], [x2, y2]]
 METRICS_ENABLED = CFG["metrics_enabled"]
 METRICS_OUTPUT_PATH = CFG["metrics_output_path"]
+VISUALIZATION_ENABLED = CFG["visualization_enabled"]
 params = CFG["params"]
 
 
@@ -101,18 +121,46 @@ def _get_robot_start_position(robot_idx):
     return np.array([0.0, 0.0], dtype=float)
 
 
-def run_single_robot(robot_idx):
-    np.random.seed(SEED + robot_idx)
+def _get_sheep_start_positions():
+    if SHEEP_START_MODE == "fixed":
+        if len(SHEEP_START_POSITIONS) < NUM_SHEEP:
+            raise ValueError(
+                "sheep_start_positions must contain at least num_sheep entries "
+                "when sheep_start_mode=fixed"
+            )
+        return [np.array(SHEEP_START_POSITIONS[i], dtype=float) for i in range(NUM_SHEEP)]
 
-    sheep = [Sheep(i, np.random.rand(2) * 10) for i in range(NUM_SHEEP)]
-    robot_start = _get_robot_start_position(robot_idx)
-    robot = ShepherdRobot(position=robot_start)
-    logger = Logger(path=_with_index_suffix("data/logs/run.json", robot_idx, NUM_ROBOTS))
+    # default: random
+    xmin, ymin, xmax, ymax = SHEEP_SPAWN_BOUNDS
+    return [
+        np.array([
+            np.random.uniform(xmin, xmax),
+            np.random.uniform(ymin, ymax),
+        ], dtype=float)
+        for _ in range(NUM_SHEEP)
+    ]
 
-    fence = [(5, 5), (15, 5)]
 
+def run_shared_simulation():
+    if SEED is None:
+        np.random.seed(None)
+    else:
+        np.random.seed(SEED)
+
+    sheep_starts = _get_sheep_start_positions()
+    sheep = [Sheep(i, sheep_starts[i]) for i in range(NUM_SHEEP)]
+    robots = [
+        ShepherdRobot(position=_get_robot_start_position(robot_idx))
+        for robot_idx in range(NUM_ROBOTS)
+    ]
+    logger = Logger(path="data/logs/run.json")
+
+    fence = FENCE
     t = 0
     goal_reached = False
+    plot_process = None
+    flush_interval = 100
+
     while True:
         if STEPS is not None and t >= STEPS:
             print(f"[Sim] Reached step limit ({STEPS}) without reaching goal.")
@@ -120,10 +168,32 @@ def run_single_robot(robot_idx):
 
         for s in sheep:
             neighbors = [n for n in sheep if n != s]
-            s.update(neighbors, robot, params, fence)
+            s.update(neighbors, robots, params, fence)
 
-        mode = robot.compute_action(sheep, GOAL_POS, params, fence=fence)
-        logger.log(t, sheep, robot, mode=mode)
+        modes = []
+        for robot_idx, robot in enumerate(robots):
+            robot_params = dict(params)
+            robot_params["robot_index"] = robot_idx
+            robot_params["num_robots"] = NUM_ROBOTS
+            mode = robot.compute_action(sheep, GOAL_POS, robot_params, fence=fence)
+            modes.append(mode)
+
+        logger.log(t, sheep, robots, mode=modes)
+
+        if t % flush_interval == 0:
+            logger.flush()
+            if VISUALIZATION_ENABLED and plot_process is None and t == flush_interval:
+                try:
+                    project_root = os.path.join(os.path.dirname(__file__), "..")
+                    plot_process = subprocess.Popen(
+                        [sys.executable, "experiments/plot_run.py"],
+                        cwd=project_root,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    print("[Sim] Started live visualization (plot_run.py)")
+                except Exception as e:
+                    print(f"[Sim] Could not start visualization: {e}")
 
         centroid = np.mean([s.position for s in sheep], axis=0)
         if np.linalg.norm(centroid - GOAL_POS) <= GOAL_RADIUS:
@@ -135,31 +205,40 @@ def run_single_robot(robot_idx):
 
     logger.save()
 
+    if plot_process is not None:
+        print("[Sim] Simulation complete. Visualization window will stay open until closed (press 'q' to quit).")
+        try:
+            plot_process.wait()
+        except KeyboardInterrupt:
+            plot_process.terminate()
+
     if METRICS_ENABLED:
         centroid = np.mean([s.position for s in sheep], axis=0)
         sheep_positions = np.array([s.position for s in sheep])
         sheep_goal_dists = np.linalg.norm(sheep_positions - GOAL_POS, axis=1)
-        robot_sheep_dists = np.linalg.norm(sheep_positions - robot.position, axis=1)
+        robot_positions = np.array([robot.position for robot in robots])
+        robot_sheep_dist_matrix = np.linalg.norm(
+            sheep_positions[:, None, :] - robot_positions[None, :, :], axis=2
+        )
+        nearest_robot_dists = np.min(robot_sheep_dist_matrix, axis=1)
         metrics = {
-            "robot_index": robot_idx,
+            "num_robots": NUM_ROBOTS,
             "steps_executed": t,
             "goal_reached": goal_reached,
             "final_centroid_distance_to_goal": float(np.linalg.norm(centroid - GOAL_POS)),
             "avg_sheep_distance_to_goal": float(np.mean(sheep_goal_dists)),
             "max_sheep_distance_to_goal": float(np.max(sheep_goal_dists)),
-            "min_robot_sheep_distance": float(np.min(robot_sheep_dists)),
-            "avg_robot_sheep_distance": float(np.mean(robot_sheep_dists)),
+            "min_robot_sheep_distance": float(np.min(nearest_robot_dists)),
+            "avg_robot_sheep_distance": float(np.mean(nearest_robot_dists)),
             "simulated_time": float(t * params["dt"]),
         }
 
-        metrics_path = _with_index_suffix(METRICS_OUTPUT_PATH, robot_idx, NUM_ROBOTS)
-        os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
-        with open(metrics_path, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(METRICS_OUTPUT_PATH), exist_ok=True)
+        with open(METRICS_OUTPUT_PATH, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=2)
-        print(f"[Metrics] Saved metrics to {metrics_path}")
+        print(f"[Metrics] Saved metrics to {METRICS_OUTPUT_PATH}")
 
 
-for robot_idx in range(NUM_ROBOTS):
-    run_single_robot(robot_idx)
+run_shared_simulation()
 
 print("[Sim] Done.")

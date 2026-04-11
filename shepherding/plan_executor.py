@@ -35,6 +35,19 @@ class PlanExecutor:
     # Public API
     # ------------------------------------------------------------------
 
+    def _zone_center_from_name(self, zone_name):
+        """Convert a zone name like z_1_2 to its continuous center point."""
+        try:
+            _, row_str, col_str = zone_name.split("_")
+            row = int(row_str)
+            col = int(col_str)
+        except (ValueError, AttributeError):
+            return None
+
+        x = self.abstraction.xmin + (col + 0.5) * self.abstraction.cell_w
+        y = self.abstraction.ymin + (row + 0.5) * self.abstraction.cell_h
+        return np.array([x, y], dtype=float)
+
     def get_mode(self, action):
         """
         Return the reactive mode string that matches this PDDL action.
@@ -85,6 +98,9 @@ class PlanExecutor:
         dict  — modified params copy (original is never mutated)
         """
         overrides = dict(params)
+        overrides.pop("forced_target_pos", None)
+        overrides.pop("forced_collect_sheep_id", None)
+        overrides.pop("forced_drive_goal_pos", None)
 
         if action is None:
             return overrides
@@ -94,16 +110,33 @@ class PlanExecutor:
         if name == "collect-outlier":
             # Force collect mode by setting threshold very high
             overrides["collect_threshold"] = 1e9
+            if action.get("args"):
+                sheep_token = action["args"][0]
+                if isinstance(sheep_token, str) and sheep_token.startswith("sheep"):
+                    try:
+                        overrides["forced_collect_sheep_id"] = int(sheep_token.replace("sheep", ""))
+                    except ValueError:
+                        pass
 
         elif name in ("drive-flock", "pen-flock"):
             # Force drive mode by setting threshold to zero
             overrides["collect_threshold"] = 0.0
+            if name == "drive-flock" and len(action.get("args", [])) >= 3:
+                next_zone = action["args"][2]
+                zone_center = self._zone_center_from_name(next_zone)
+                if zone_center is not None:
+                    overrides["forced_drive_goal_pos"] = zone_center
+                # Help the robot reach the behind-flock pushing position faster.
+                overrides["robot_max_speed"] = params.get("robot_max_speed", 0.3) * 1.25
 
         elif name == "move-robot":
-            # Robot moves but should not push the flock — increase the
-            # drive distance so it repositions far from the herd.
+            # Force robot to move toward the requested symbolic destination zone.
             overrides["collect_threshold"] = 1e9
-            overrides["collect_distance"] = params.get("collect_distance", 1.5) * 2
+            if len(action.get("args", [])) >= 2:
+                target_zone = action["args"][1]
+                zone_center = self._zone_center_from_name(target_zone)
+                if zone_center is not None:
+                    overrides["forced_target_pos"] = zone_center
 
         return overrides
 
@@ -142,8 +175,18 @@ class PlanExecutor:
             return robot_zone == target_zone
 
         if name == "collect-outlier":
-            # Completed when no sheep are further than threshold from centroid
             threshold = self.abstraction.collect_threshold
+            if action.get("args"):
+                sheep_token = action["args"][0]
+                if isinstance(sheep_token, str) and sheep_token.startswith("sheep"):
+                    try:
+                        target_id = int(sheep_token.replace("sheep", ""))
+                        for idx, sheep_obj in enumerate(sheep):
+                            if sheep_obj.id == target_id:
+                                return bool(distances[idx] <= threshold)
+                    except ValueError:
+                        pass
+            # Fallback when the action does not name a valid sheep id.
             return bool(np.max(distances) <= threshold)
 
         if name == "drive-flock":
