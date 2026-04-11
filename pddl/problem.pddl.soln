@@ -1,0 +1,7 @@
+(move-robot z_0_3 z_0_2)
+(drive-flock z_0_2 z_0_3 z_1_3 z_4_4)
+(drive-flock z_0_2 z_1_3 z_2_3 z_4_4)
+(drive-flock z_0_2 z_2_3 z_2_4 z_4_4)
+(drive-flock z_0_2 z_2_4 z_3_4 z_4_4)
+(drive-flock z_0_2 z_3_4 z_4_4 z_4_4)
+(pen-flock z_4_4)

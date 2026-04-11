@@ -1,0 +1,48 @@
+simulation:
+  seed: 42
+  num_robots: 1
+  num_sheep: 15
+  # Use null to run until the goal is reached.
+  # Use an integer to enforce a hard step cap.
+  steps: null
+  bounds: [0, 0, 20, 20]
+  goal_pos: [18.0, 18.0]
+  goal_radius: 2.0
+
+planner:
+  backend: pyperplan   # options: pyperplan, popf
+  # Only used when backend=popf
+  popf_command: popf
+  timeout_s: null
+  replan_interval: 300
+  grid_size: 5
+
+logging:
+  # When true, suppress detailed planner action dumps.
+  planner_quiet: true
+  # Print "Iteration N" every N steps (0 disables this periodic print).
+  iteration_log_interval: 100
+
+pddl:
+  domain_name: shepherding
+  problem_name: shepherding-problem
+  domain_path: pddl/shepherding_domain.pddl
+  problem_path: pddl/problem.pddl
+
+flocking:
+  w_coh: 0.05
+  w_sep: 0.4
+  w_align: 0.05
+  w_robot: 0.2
+  w_fence: 1.5
+  min_dist: 0.5
+  max_speed: 0.15
+  dt: 0.05
+  neighbor_radius: 2.5
+
+robot:
+  collect_threshold: 3.0
+  collect_distance: 1.5
+  drive_distance: 2.0
+  robot_max_speed: 0.3
+  robot_influence: 3.0

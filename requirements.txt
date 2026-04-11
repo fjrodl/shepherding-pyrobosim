@@ -8,3 +8,4 @@ jinja2
 typeguard
 imageio
 imageio[ffmpeg]
+pyperplan
