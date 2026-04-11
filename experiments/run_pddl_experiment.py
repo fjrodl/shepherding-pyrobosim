@@ -14,6 +14,8 @@ maintains its own PDDL planning state, but replans from the same shared world.
 
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -57,6 +59,7 @@ def _load_experiment_config(config_path):
     cfg = {
         "seed": seed,
         "num_robots": int(sim_cfg.get("num_robots", 1)),
+        "coordination_mode": str(sim_cfg.get("coordination_mode", "roles")).lower(),
         "robot_start_mode": str(sim_cfg.get("robot_start_mode", "origin")).lower(),
         "robot_start_positions": sim_cfg.get("robot_start_positions", [[0.0, 0.0]]),
         "sheep_start_mode": str(sim_cfg.get("sheep_start_mode", "random")).lower(),
@@ -71,6 +74,9 @@ def _load_experiment_config(config_path):
         "replan_interval": int(planner_cfg.get("replan_interval", 300)),
         "grid_size": int(planner_cfg.get("grid_size", 5)),
         "planner_backend": str(planner_cfg.get("backend", "pyperplan")).lower(),
+        "planner_fallback_backend": (
+            str(planner_cfg.get("fallback_backend", "")).lower() or None
+        ),
         "popf_command": planner_cfg.get("popf_command", "popf"),
         "planner_timeout_s": planner_cfg.get("timeout_s", None),
         "planner_quiet": bool(logging_cfg.get("planner_quiet", True)),
@@ -110,6 +116,7 @@ CFG = _load_experiment_config(CONFIG_PATH)
 
 SEED = CFG["seed"]
 NUM_ROBOTS = CFG["num_robots"]
+COORDINATION_MODE = CFG["coordination_mode"]
 ROBOT_START_MODE = CFG["robot_start_mode"]
 ROBOT_START_POSITIONS = CFG["robot_start_positions"]
 SHEEP_START_MODE = CFG["sheep_start_mode"]
@@ -124,6 +131,7 @@ BOUNDS = CFG["bounds"]
 GOAL_POS = CFG["goal_pos"]
 FENCE = CFG["fence"]
 PLANNER_BACKEND = CFG["planner_backend"]
+PLANNER_FALLBACK_BACKEND = CFG["planner_fallback_backend"]
 POPF_COMMAND = CFG["popf_command"]
 PLANNER_TIMEOUT_S = CFG["planner_timeout_s"]
 PLANNER_QUIET = CFG["planner_quiet"]
@@ -186,6 +194,28 @@ def _get_sheep_start_positions():
 
 
 def run_shared_pddl_simulation():
+    if COORDINATION_MODE not in {"roles", "pddl_all_robots"}:
+        raise ValueError(
+            "simulation.coordination_mode must be 'roles' or 'pddl_all_robots'"
+        )
+
+    selected_backend = PLANNER_BACKEND
+    if selected_backend == "popf":
+        cmd_parts = shlex.split(str(POPF_COMMAND))
+        popf_bin = cmd_parts[0] if cmd_parts else "popf"
+        if shutil.which(popf_bin) is None:
+            if PLANNER_FALLBACK_BACKEND in {"pyperplan", "popf"} and PLANNER_FALLBACK_BACKEND != "popf":
+                print(
+                    f"[Planner] WARNING: POPF executable '{popf_bin}' not found. "
+                    f"Falling back to backend='{PLANNER_FALLBACK_BACKEND}'."
+                )
+                selected_backend = PLANNER_FALLBACK_BACKEND
+            else:
+                raise RuntimeError(
+                    f"POPF executable '{popf_bin}' not found on PATH. "
+                    "Install POPF or set planner.fallback_backend: pyperplan in YAML."
+                )
+
     if SEED is None:
         np.random.seed(None)
     else:
@@ -214,7 +244,10 @@ def run_shared_pddl_simulation():
         for robot_idx in range(NUM_ROBOTS)
     ]
 
-    print(f"[Sim] Starting shared-arena run with {NUM_ROBOTS} robots (planner={PLANNER_BACKEND}).")
+    print(
+        f"[Sim] Starting shared-arena run with {NUM_ROBOTS} robots "
+        f"(planner={selected_backend}, coordination_mode={COORDINATION_MODE})."
+    )
 
     def replan(robot_idx, step_idx):
         abstraction = abstractions[robot_idx]
@@ -231,7 +264,7 @@ def run_shared_pddl_simulation():
             new_plan = solve(
                 os.path.abspath(DOMAIN_PATH),
                 os.path.abspath(problem_paths[robot_idx]),
-                backend=PLANNER_BACKEND,
+                backend=selected_backend,
                 popf_command=POPF_COMMAND,
                 timeout_s=PLANNER_TIMEOUT_S,
             )
@@ -253,10 +286,15 @@ def run_shared_pddl_simulation():
         outlier_count = int(np.sum(distances > abstractions[robot_idx].collect_threshold))
         return max_dist, outlier_count
 
-    # Only robot 0 (alpha) is PDDL-guided; roles for the rest are purely reactive.
-    alpha_plan = replan(0, step_idx=0)
-    plans = [alpha_plan] + [[] for _ in range(1, NUM_ROBOTS)]
-    current_actions = [plans[0].pop(0) if plans[0] else None] + [None] * (NUM_ROBOTS - 1)
+    if COORDINATION_MODE == "roles":
+        # Robot 0 (alpha) is PDDL-guided; others are reactive roles.
+        alpha_plan = replan(0, step_idx=0)
+        plans = [alpha_plan] + [[] for _ in range(1, NUM_ROBOTS)]
+        current_actions = [plans[0].pop(0) if plans[0] else None] + [None] * (NUM_ROBOTS - 1)
+    else:
+        # All robots receive their own PDDL plans.
+        plans = [replan(robot_idx, step_idx=0) for robot_idx in range(NUM_ROBOTS)]
+        current_actions = [plan.pop(0) if plan else None for plan in plans]
     steps_since_replan = [0 for _ in range(NUM_ROBOTS)]
     current_action_stall_steps = [0 for _ in range(NUM_ROBOTS)]
     best_collect_scores = [None for _ in range(NUM_ROBOTS)]
@@ -291,17 +329,25 @@ def run_shared_pddl_simulation():
 
         log_modes = []
         for robot_idx, robot in enumerate(robots):
-            if robot_idx == 0:
-                # Alpha: PDDL-guided overrides
-                eff_params = executors[0].get_param_overrides(
-                    current_actions[0], sheep, robot, GOAL_POS, params
+            if COORDINATION_MODE == "roles":
+                if robot_idx == 0:
+                    # Alpha: PDDL-guided overrides
+                    eff_params = executors[0].get_param_overrides(
+                        current_actions[0], sheep, robot, GOAL_POS, params
+                    )
+                    eff_params = dict(eff_params)
+                    role = "alpha"
+                else:
+                    # Subordinate robots: purely reactive, no PDDL
+                    eff_params = dict(params)
+                    role = "collector" if robot_idx == 1 else "flanker"
+            else:
+                # Per-robot PDDL mode
+                eff_params = executors[robot_idx].get_param_overrides(
+                    current_actions[robot_idx], sheep, robot, GOAL_POS, params
                 )
                 eff_params = dict(eff_params)
                 role = "alpha"
-            else:
-                # Subordinate robots: purely reactive, no PDDL
-                eff_params = dict(params)
-                role = "collector" if robot_idx == 1 else "flanker"
             eff_params["robot_index"] = robot_idx
             eff_params["num_robots"] = NUM_ROBOTS
             eff_params["robot_role"] = role
@@ -332,7 +378,7 @@ def run_shared_pddl_simulation():
             break
 
         for robot_idx in range(NUM_ROBOTS):
-            if robot_idx != 0:
+            if COORDINATION_MODE == "roles" and robot_idx != 0:
                 continue  # subordinate robots are purely reactive; no PDDL tracking
             steps_since_replan[robot_idx] += 1
             action = current_actions[robot_idx]
@@ -410,9 +456,10 @@ def run_shared_pddl_simulation():
         nearest_robot_dists = np.min(robot_sheep_dist_matrix, axis=1)
         metrics = {
             "num_robots": NUM_ROBOTS,
+            "coordination_mode": COORDINATION_MODE,
             "steps_executed": t,
             "goal_reached": goal_reached,
-            "planner_backend": PLANNER_BACKEND,
+            "planner_backend": selected_backend,
             "final_centroid_distance_to_goal": float(np.linalg.norm(centroid - GOAL_POS)),
             "avg_sheep_distance_to_goal": float(np.mean(sheep_goal_dists)),
             "max_sheep_distance_to_goal": float(np.max(sheep_goal_dists)),

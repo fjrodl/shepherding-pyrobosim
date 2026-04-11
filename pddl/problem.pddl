@@ -4,8 +4,8 @@
     z_0_0 z_0_1 z_0_2 z_0_3 z_0_4 z_1_0 z_1_1 z_1_2 z_1_3 z_1_4 z_2_0 z_2_1 z_2_2 z_2_3 z_2_4 z_3_0 z_3_1 z_3_2 z_3_3 z_3_4 z_4_0 z_4_1 z_4_2 z_4_3 z_4_4 - zone
   )
   (:init
-    (robot-at-zone z_3_4)
-    (flock-at-zone z_3_4)
+    (robot-at-zone z_3_3)
+    (flock-at-zone z_4_3)
     (flock-compact)
     (zone-adjacent z_0_0 z_0_1)
     (zone-adjacent z_0_1 z_0_0)

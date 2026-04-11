@@ -1,0 +1,63 @@
+simulation:
+  seed: 2
+  num_robots: 1
+  coordination_mode: pddl_all_robots   # options: roles, pddl_all_robots
+  robot_start_mode: fixed
+  robot_start_positions:
+    - [0.0, 0.0]
+    - [0.5, 0.0]
+    - [1.0, 0.0]
+  sheep_start_mode: random
+  sheep_start_positions: []
+  sheep_spawn_bounds: [0.0, 0.0, 10.0, 10.0]
+  num_sheep: 15
+  steps: null
+  bounds: [0, 0, 20, 20]
+  goal_pos: [18.0, 18.0]
+  goal_radius: 1.0
+  fence: null
+
+planner:
+  backend: popf
+  popf_command: popf
+  fallback_backend: pyperplan
+  timeout_s: null
+  replan_interval: 300
+  grid_size: 5
+
+logging:
+  planner_quiet: false
+  iteration_log_interval: 100
+  enable_visualization: true
+
+metrics:
+  enabled: true
+  reactive_output_path: data/logs/run_metrics.json
+  pddl_output_path: data/logs/run_pddl_metrics.json
+
+pddl:
+  domain_name: shepherding
+  problem_name: shepherding-problem
+  domain_path: pddl/shepherding_domain.pddl
+  problem_path: pddl/problem.pddl
+
+flocking:
+  w_coh: 0.05
+  w_sep: 0.4
+  w_align: 0.05
+  w_robot: 0.2
+  w_fence: 1.5
+  min_dist: 0.5
+  max_speed: 0.15
+  dt: 0.05
+  neighbor_radius: 2.5
+  noise_std: 0.01
+
+robot:
+  collect_threshold: 3.0
+  collect_distance: 1.5
+  drive_distance: 2.0
+  robot_max_speed: 0.1
+  robot_influence: 3.0
+  robot_sheep_min_distance: 1.0
+  robot_fence_clearance: 0.2

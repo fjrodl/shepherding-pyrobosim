@@ -2,11 +2,25 @@
   (:domain shepherding)
   (:objects
     z_0_0 z_0_1 z_0_2 z_0_3 z_0_4 z_1_0 z_1_1 z_1_2 z_1_3 z_1_4 z_2_0 z_2_1 z_2_2 z_2_3 z_2_4 z_3_0 z_3_1 z_3_2 z_3_3 z_3_4 z_4_0 z_4_1 z_4_2 z_4_3 z_4_4 - zone
+    sheep0 sheep1 sheep2 sheep3 sheep4 sheep6 sheep7 sheep8 sheep9 sheep10 sheep11 sheep12 sheep13 - sheep
   )
   (:init
-    (robot-at-zone z_0_3)
-    (flock-at-zone z_0_4)
-    (flock-compact)
+    (robot-at-zone z_0_1)
+    (flock-at-zone z_1_2)
+    (flock-dispersed)
+    (sheep-at-zone sheep0 z_0_2)
+    (sheep-at-zone sheep1 z_0_2)
+    (sheep-at-zone sheep2 z_0_2)
+    (sheep-at-zone sheep3 z_3_1)
+    (sheep-at-zone sheep4 z_0_2)
+    (sheep-at-zone sheep6 z_3_1)
+    (sheep-at-zone sheep7 z_3_1)
+    (sheep-at-zone sheep8 z_0_2)
+    (sheep-at-zone sheep9 z_0_2)
+    (sheep-at-zone sheep10 z_0_2)
+    (sheep-at-zone sheep11 z_0_2)
+    (sheep-at-zone sheep12 z_3_0)
+    (sheep-at-zone sheep13 z_0_2)
     (zone-adjacent z_0_0 z_0_1)
     (zone-adjacent z_0_1 z_0_0)
     (zone-adjacent z_0_0 z_1_0)

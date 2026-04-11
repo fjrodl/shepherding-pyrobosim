@@ -139,6 +139,10 @@ python3 experiments/run_experiment.py
 
 EXPERIMENT_CONFIG=config/fixed_experiment.yaml \
 python3 experiments/run_pddl_experiment.py
+
+# POPF + all-robots PDDL profile
+EXPERIMENT_CONFIG=config/popf_experiment.yaml \
+python3 experiments/run_pddl_experiment.py
 ```
 
 ---
@@ -164,6 +168,7 @@ read from this same YAML file.
 | `BOUNDS` | `[0,0,20,20]` | World boundaries (xmin, ymin, xmax, ymax) |
 | `GOAL_POS` | `[18.0, 18.0]` | Target corral position |
 | `GOAL_RADIUS` | `2.0` | Distance threshold to consider goal reached |
+| `coordination_mode` | `roles` | Multi-robot mode: `roles` (alpha+collector+flankers) or `pddl_all_robots` (each robot runs PDDL) |
 
 ### PDDL Planner
 
