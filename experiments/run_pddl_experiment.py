@@ -253,8 +253,10 @@ def run_shared_pddl_simulation():
         outlier_count = int(np.sum(distances > abstractions[robot_idx].collect_threshold))
         return max_dist, outlier_count
 
-    plans = [replan(robot_idx, step_idx=0) for robot_idx in range(NUM_ROBOTS)]
-    current_actions = [plan.pop(0) if plan else None for plan in plans]
+    # Only robot 0 (alpha) is PDDL-guided; roles for the rest are purely reactive.
+    alpha_plan = replan(0, step_idx=0)
+    plans = [alpha_plan] + [[] for _ in range(1, NUM_ROBOTS)]
+    current_actions = [plans[0].pop(0) if plans[0] else None] + [None] * (NUM_ROBOTS - 1)
     steps_since_replan = [0 for _ in range(NUM_ROBOTS)]
     current_action_stall_steps = [0 for _ in range(NUM_ROBOTS)]
     best_collect_scores = [None for _ in range(NUM_ROBOTS)]
@@ -289,12 +291,20 @@ def run_shared_pddl_simulation():
 
         log_modes = []
         for robot_idx, robot in enumerate(robots):
-            eff_params = executors[robot_idx].get_param_overrides(
-                current_actions[robot_idx], sheep, robot, GOAL_POS, params
-            )
-            eff_params = dict(eff_params)
+            if robot_idx == 0:
+                # Alpha: PDDL-guided overrides
+                eff_params = executors[0].get_param_overrides(
+                    current_actions[0], sheep, robot, GOAL_POS, params
+                )
+                eff_params = dict(eff_params)
+                role = "alpha"
+            else:
+                # Subordinate robots: purely reactive, no PDDL
+                eff_params = dict(params)
+                role = "collector" if robot_idx == 1 else "flanker"
             eff_params["robot_index"] = robot_idx
             eff_params["num_robots"] = NUM_ROBOTS
+            eff_params["robot_role"] = role
             mode = robot.compute_action(sheep, GOAL_POS, eff_params, fence=fence)
             log_modes.append(current_actions[robot_idx]["name"] if current_actions[robot_idx] else mode)
 
@@ -322,6 +332,8 @@ def run_shared_pddl_simulation():
             break
 
         for robot_idx in range(NUM_ROBOTS):
+            if robot_idx != 0:
+                continue  # subordinate robots are purely reactive; no PDDL tracking
             steps_since_replan[robot_idx] += 1
             action = current_actions[robot_idx]
 

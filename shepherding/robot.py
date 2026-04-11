@@ -168,7 +168,64 @@ class ShepherdRobot:
         
         return adjusted
 
+    def _move_toward(self, desired_pos, sheep, params, fence):
+        """Shared movement kernel: apply constraints then step toward desired_pos."""
+        sheep_clearance = params.get("robot_sheep_min_distance", 1.0)
+        fence_clearance = params.get("robot_fence_clearance", 0.35)
+        bounds = params.get("bounds", [0, 0, 20, 20])
+        xmin, ymin, xmax, ymax = bounds
+        margin = 0.2
+        desired_pos = self._enforce_sheep_clearance(desired_pos, sheep, sheep_clearance)
+        desired_pos = self._enforce_fence_constraint(self.position, desired_pos, fence, fence_clearance)
+        desired_pos[0] = np.clip(desired_pos[0], xmin + margin, xmax - margin)
+        desired_pos[1] = np.clip(desired_pos[1], ymin + margin, ymax - margin)
+        move = desired_pos - self.position
+        dist = np.linalg.norm(move)
+        max_step = params["robot_max_speed"] * params["dt"]
+        if dist > 1e-9:
+            self.position += (move / dist) * min(dist, max_step)
+
+    def compute_action_collector(self, sheep, params, fence=None):
+        """Collector role: seek the farthest outlier and herd it back to the flock centroid."""
+        positions = np.array([s.position for s in sheep])
+        centroid = np.mean(positions, axis=0)
+        distances = np.linalg.norm(positions - centroid, axis=1)
+
+        target_idx = int(np.argmax(distances))
+        target_pos = positions[target_idx]
+
+        # Position behind the outlier (on the far side from centroid)
+        direction = target_pos - centroid
+        d = np.linalg.norm(direction)
+        direction = direction / d if d > 1e-6 else np.array([1.0, 0.0])
+        desired_pos = target_pos + direction * params["collect_distance"]
+
+        self._move_toward(desired_pos, sheep, params, fence)
+        return "collect"
+
+    def compute_action_flanker(self, sheep, goal, params, fence=None):
+        """Flanker role: sit on the anti-goal side of the flock centroid and push toward goal."""
+        positions = np.array([s.position for s in sheep])
+        centroid = np.mean(positions, axis=0)
+        goal = np.array(goal, dtype=float)
+
+        # Direction from goal toward centroid → place robot behind flock
+        direction = centroid - goal
+        d = np.linalg.norm(direction)
+        direction = direction / d if d > 1e-6 else np.array([-1.0, 0.0])
+        desired_pos = centroid + direction * params["drive_distance"]
+
+        self._move_toward(desired_pos, sheep, params, fence)
+        return "flank"
+
     def compute_action(self, sheep, goal, params, fence=None):
+        role = params.get("robot_role", "alpha")
+        if role == "collector":
+            return self.compute_action_collector(sheep, params, fence)
+        if role == "flanker":
+            return self.compute_action_flanker(sheep, goal, params, fence)
+
+        # --- alpha (PDDL-guided) ---
         positions = np.array([s.position for s in sheep])
         center = np.mean(positions, axis=0)
         neighbor_radius = params.get("neighbor_radius", 2.5)
@@ -239,26 +296,6 @@ class ShepherdRobot:
 
             desired_pos = main_center + direction * params["drive_distance"]
 
-        sheep_clearance = params.get("robot_sheep_min_distance", 1.0)
-        fence_clearance = params.get("robot_fence_clearance", 0.35)
-        bounds = params.get("bounds", [0, 0, 20, 20])
-        xmin, ymin, xmax, ymax = bounds
-        margin = 0.2  # Margin from boundaries
-
-        desired_pos = self._enforce_sheep_clearance(desired_pos, sheep, sheep_clearance)
-        desired_pos = self._enforce_fence_constraint(self.position, desired_pos, fence, fence_clearance)
-        
-        # Enforce world boundaries AFTER constraints
-        desired_pos[0] = np.clip(desired_pos[0], xmin + margin, xmax - margin)
-        desired_pos[1] = np.clip(desired_pos[1], ymin + margin, ymax - margin)
-
-        # --- movimiento del robot ---
-        move = desired_pos - self.position
-        dist = np.linalg.norm(move)
-        max_step = params["robot_max_speed"] * params["dt"]
-
-        if dist > 1e-9:
-            step = (move / dist) * min(dist, max_step)
-            self.position += step
+        self._move_toward(desired_pos, sheep, params, fence)
 
         return mode  # útil para logging/debug
