@@ -175,6 +175,7 @@ def run_shared_simulation():
             robot_params = dict(params)
             robot_params["robot_index"] = robot_idx
             robot_params["num_robots"] = NUM_ROBOTS
+            robot_params["iteration"] = t  # Add iteration for adaptive driving behavior
             mode = robot.compute_action(sheep, GOAL_POS, robot_params, fence=fence)
             modes.append(mode)
 

@@ -351,6 +351,7 @@ def run_shared_pddl_simulation():
             eff_params["robot_index"] = robot_idx
             eff_params["num_robots"] = NUM_ROBOTS
             eff_params["robot_role"] = role
+            eff_params["iteration"] = t  # Add iteration for adaptive driving behavior
             mode = robot.compute_action(sheep, GOAL_POS, eff_params, fence=fence)
             log_modes.append(current_actions[robot_idx]["name"] if current_actions[robot_idx] else mode)
 

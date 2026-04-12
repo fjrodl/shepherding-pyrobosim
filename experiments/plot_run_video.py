@@ -1,7 +1,7 @@
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-import imageio
+import imageio.v2 as imageio
 import os
 
 # ----------------------------
@@ -57,7 +57,13 @@ for idx, step in enumerate(data[::FRAME_STEP]):
     plt.clf()
 
     positions = np.array(step["sheep"])
-    robot = np.array(step["robot"])
+    # Support both legacy "robot" (single position) and current "robots" (list).
+    if "robots" in step:
+        robots = np.array(step["robots"], dtype=float)
+    elif "robot" in step:
+        robots = np.array([step["robot"]], dtype=float)
+    else:
+        raise KeyError("Missing robot data: expected 'robots' or 'robot' in log step")
 
     # --- clusters ---
     clusters = compute_clusters(positions, CLUSTER_RADIUS)
@@ -71,8 +77,9 @@ for idx, step in enumerate(data[::FRAME_STEP]):
             s=20
         )
 
-    # --- robot ---
-    plt.scatter(robot[0], robot[1], marker='x', s=80, label="Robot")
+    # --- robot(s) ---
+    if len(robots) > 0:
+        plt.scatter(robots[:, 0], robots[:, 1], marker='x', s=80, label="Robot")
 
     # --- goal ---
     plt.scatter(goal[0], goal[1], marker='s', s=80, label="Goal")
@@ -80,7 +87,7 @@ for idx, step in enumerate(data[::FRAME_STEP]):
     # --- fence ---
     x_vals = [fence[0][0], fence[1][0]]
     y_vals = [fence[0][1], fence[1][1]]
-    plt.plot(x_vals, y_vals, linewidth=3, color='brown', label="Fence")
+    # plt.plot(x_vals, y_vals, linewidth=3, color='brown', label="Fence")
 
     # --- center ---
     center = positions.mean(axis=0)

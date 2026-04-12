@@ -63,10 +63,10 @@ flocking:
   noise_std: 0.01
 
 robot:
-  collect_threshold: 3.0
-  collect_distance: 1.5
-  drive_distance: 2.0
-  robot_max_speed: 0.1
-  robot_influence: 3.0
+  collect_threshold: 4.0
+  collect_distance: 2.0
+  drive_distance: 4.0
+  robot_max_speed: 0.15
+  robot_influence: 4.0
   robot_sheep_min_distance: 1.0
   robot_fence_clearance: 0.2

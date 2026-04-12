@@ -1,7 +1,7 @@
 simulation:
   seed: 2                      # unitless RNG seed, use null for random seed //1 requires 83k, 42 requires 230k
-  num_robots: 1                  # count
-  coordination_mode: pddl_all_robots      # options: roles, pddl_all_robots
+  num_robots: 3                  # count
+  coordination_mode: roles      # options: roles, pddl_all_robots
   robot_start_mode: fixed       # options: origin, random, fixed
   # Used when robot_start_mode=fixed. One [x, y] per robot.
   # If fewer positions than num_robots are provided, the first position is reused.
@@ -70,11 +70,11 @@ flocking:
   noise_std: 0.01                # world units / step (stochastic sheep motion)
 
 robot:
-  collect_threshold: 3.0         # world units
-  collect_distance: 1.5          # world units
-  drive_distance: 2.0            # world units
-  robot_max_speed: 0.1           # world units / step
-  robot_influence: 3.0           # world units
+  collect_threshold: 4.0         # world units (increased to prevent premature mode switching)
+  collect_distance: 2.0          # world units (increased for better outlier collection)
+  drive_distance: 4.0            # world units (doubled for better flock driving)
+  robot_max_speed: 0.15          # world units / step (increased for more responsive movement)
+  robot_influence: 4.0           # world units (increased for stronger herding pressure)
   # Minimum distance the robot tries to keep from any sheep.
   robot_sheep_min_distance: 1.0  # world units
   # Clearance from the fence segment to avoid crossing or hugging it.

@@ -289,12 +289,42 @@ class ShepherdRobot:
             desired_pos = target_pos + direction * params["collect_distance"]
 
         else:  # driving
-            # empujar el rebaño hacia el goal
+            # empujar el rebaño hacia el goal with improved adaptive strategy
             drive_goal = np.array(forced_drive_goal_pos, dtype=float) if forced_drive_goal_pos is not None else goal
-            direction = main_center - drive_goal
-            direction = direction / (np.linalg.norm(direction) + 1e-6)
-
-            desired_pos = main_center + direction * params["drive_distance"]
+            
+            # Calculate flock spread to determine appropriate driving distance
+            flock_distances = np.linalg.norm(positions - main_center, axis=1)
+            flock_spread = np.max(flock_distances)
+            
+            # Adaptive driving distance based on flock spread and remaining distance to goal
+            base_drive_distance = params["drive_distance"]
+            goal_distance = np.linalg.norm(main_center - drive_goal)
+            
+            # Increase driving distance for larger flocks and longer distances
+            adaptive_drive_distance = base_drive_distance + flock_spread * 0.5 + min(goal_distance * 0.2, 3.0)
+            
+            # Calculate primary direction (from goal to flock center)
+            primary_direction = main_center - drive_goal
+            primary_direction = primary_direction / (np.linalg.norm(primary_direction) + 1e-6)
+            
+            # Add lateral movement for more dynamic herding
+            # Robot should move in an arc behind the flock to apply pressure from different angles
+            time_factor = (params.get("iteration", 0) * 0.02) % (2 * np.pi)  # Slow oscillation
+            lateral_offset = np.array([-primary_direction[1], primary_direction[0]]) * \
+                           np.sin(time_factor) * min(flock_spread * 0.3, 1.5)
+            
+            # Combine primary driving position with lateral movement
+            desired_pos = main_center + primary_direction * adaptive_drive_distance + lateral_offset
+            
+            # Ensure robot doesn't get too far from flock's line to goal
+            max_lateral_distance = flock_spread + 2.0
+            to_goal_line = drive_goal + ((main_center - drive_goal) / np.linalg.norm(main_center - drive_goal + 1e-6)) * \
+                          np.dot(desired_pos - drive_goal, (main_center - drive_goal) / (np.linalg.norm(main_center - drive_goal) + 1e-6))
+            distance_from_line = np.linalg.norm(desired_pos - to_goal_line)
+            
+            if distance_from_line > max_lateral_distance:
+                direction_to_line = (to_goal_line - desired_pos) / (np.linalg.norm(to_goal_line - desired_pos) + 1e-6)
+                desired_pos = to_goal_line - direction_to_line * max_lateral_distance
 
         self._move_toward(desired_pos, sheep, params, fence)
 
